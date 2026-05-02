@@ -8,10 +8,10 @@ import (
 func TestRegisterConsumeAndReplay(t *testing.T) {
 	now := time.Date(2026, 5, 3, 0, 0, 0, 0, time.UTC)
 	s := New(10*time.Minute, func() time.Time { return now })
-	if !s.Register("state", "https://feat.myapp.localhost") {
+	if err := s.Register("state", "https://feat.myapp.localhost"); err != nil {
 		t.Fatal("expected register success")
 	}
-	if s.Register("state", "https://other.myapp.localhost") {
+	if err := s.Register("state", "https://other.myapp.localhost"); err != ErrDuplicateState {
 		t.Fatal("expected duplicate register to fail")
 	}
 	entry, ok := s.Consume("state")
@@ -26,9 +26,22 @@ func TestRegisterConsumeAndReplay(t *testing.T) {
 func TestExpiredStateFails(t *testing.T) {
 	now := time.Date(2026, 5, 3, 0, 0, 0, 0, time.UTC)
 	s := New(time.Second, func() time.Time { return now })
-	s.Register("state", "https://feat.myapp.localhost")
+	if err := s.Register("state", "https://feat.myapp.localhost"); err != nil {
+		t.Fatal(err)
+	}
 	now = now.Add(2 * time.Second)
 	if _, ok := s.Consume("state"); ok {
 		t.Fatal("expected expired state to fail")
+	}
+}
+
+func TestRegisterFailsWhenFull(t *testing.T) {
+	s := New(10*time.Minute, time.Now)
+	s.SetMaxEntries(1)
+	if err := s.Register("state1", "https://feat.myapp.localhost"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Register("state2", "https://feat.myapp.localhost"); err != ErrStoreFull {
+		t.Fatalf("err = %v, want %v", err, ErrStoreFull)
 	}
 }

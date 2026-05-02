@@ -26,13 +26,17 @@ ALLOWED_ORIGIN_PATTERN='^https://[a-z0-9-]+\.myapp\.localhost(:[0-9]+)?$' \
 oauth-callback-dispatcher
 ```
 
+By default, the dispatcher listens on `127.0.0.1:8888`. Set `LISTEN_HOST=0.0.0.0` only when you intentionally want to expose it beyond loopback.
+
 Environment variables:
 
 | Name | Required | Default | Description |
 |---|---:|---:|---|
 | `ALLOWED_ORIGIN_PATTERN` | yes | none | Anchored regular expression for allowed client origins |
+| `LISTEN_HOST` | no | `127.0.0.1` | Listen host. Use `0.0.0.0` only with an explicit local network threat model |
 | `PORT` | no | `8888` | Listen port |
 | `STATE_TTL_SECONDS` | no | `600` | State mapping lifetime |
+| `MAX_STATE_ENTRIES` | no | `10000` | Maximum number of in-flight state mappings |
 | `LOG_LEVEL` | no | `info` | `debug`, `info`, `warn`, or `error` |
 
 Register this URL with the OAuth provider:
@@ -46,6 +50,7 @@ Before starting OAuth, register the same `state` value that you will send to the
 ```bash
 curl -i -X POST 'https://oauth-dispatcher.myapp.localhost/register' \
   -H 'Content-Type: application/json' \
+  -H 'X-OAuth-Callback-Dispatcher: register' \
   -d '{"state":"cryptographically-random-state","origin":"https://feat-a.myapp.localhost"}'
 ```
 
@@ -74,6 +79,8 @@ All existing state generation, state validation, token exchange, session creatio
 
 Responses: `204 No Content`, `400 Bad Request`, or `409 Conflict` for duplicate state.
 
+`POST /register` requires `Content-Type: application/json`, the `X-OAuth-Callback-Dispatcher: register` header, and a small JSON body. These checks intentionally reject simple browser form posts and oversized registration attempts.
+
 `GET /auth/callback`
 
 Receives `state`, `code`, `error`, `scope`, `error_description`, and any other provider query parameters. If `state` exists and has not expired, the dispatcher redirects to:
@@ -91,6 +98,8 @@ Returns `200 OK` with body `ok`.
 ## Security Model
 
 The trust decision is the `origin` field in `POST /register` checked against `ALLOWED_ORIGIN_PATTERN`. CORS headers and request `Origin` headers are browser convenience features only and are not a security boundary.
+
+When a browser sends an `Origin` header on `/register`, it must exactly match the normalized JSON `origin`. Browser clients must send the `X-OAuth-Callback-Dispatcher: register` header so that cross-origin registrations require a CORS preflight.
 
 The allowlist pattern must be anchored with `^` and `$`, and literal dots must be escaped. For example:
 

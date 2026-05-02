@@ -3,8 +3,11 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"html/template"
+	"io"
 	"log/slog"
+	"mime"
 	"net/http"
 	"net/url"
 	"time"
@@ -20,10 +23,18 @@ type Server struct {
 }
 
 type stateStore interface {
-	Register(state, origin string) bool
+	Register(state, origin string) error
 	Consume(state string) (store.Entry, bool)
 	Cleanup() int
 }
+
+const (
+	registerHeader      = "X-OAuth-Callback-Dispatcher"
+	registerHeaderValue = "register"
+	maxRegisterBodySize = 4 << 10
+	maxStateLength      = 512
+	maxOriginLength     = 2048
+)
 
 func New(allow *allowlist.Allowlist, states stateStore, logger *slog.Logger) *Server {
 	if logger == nil {
@@ -65,8 +76,30 @@ type registerRequest struct {
 }
 
 func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get(registerHeader) != registerHeaderValue {
+		http.Error(w, "registration header is required", http.StatusForbidden)
+		return
+	}
+	contentType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil || contentType != "application/json" {
+		http.Error(w, "Content-Type must be application/json", http.StatusUnsupportedMediaType)
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, maxRegisterBodySize)
 	var req registerRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&req); err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			http.Error(w, "request body is too large", http.StatusRequestEntityTooLarge)
+			return
+		}
+		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		return
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
 		http.Error(w, "invalid JSON body", http.StatusBadRequest)
 		return
 	}
@@ -74,13 +107,34 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "state and origin are required", http.StatusBadRequest)
 		return
 	}
-	if !s.allowlist.Allows(req.Origin) {
+	if len(req.State) > maxStateLength || len(req.Origin) > maxOriginLength {
+		http.Error(w, "state or origin is too large", http.StatusBadRequest)
+		return
+	}
+	origin, err := allowlist.NormalizeOrigin(req.Origin)
+	if err != nil || !s.allowlist.Allows(origin) {
 		http.Error(w, "origin is not allowed", http.StatusBadRequest)
 		return
 	}
-	setCORS(w, req.Origin)
-	if !s.store.Register(req.State, req.Origin) {
-		http.Error(w, "state already registered", http.StatusConflict)
+	requestOrigin := r.Header.Get("Origin")
+	if requestOrigin != "" {
+		normalizedRequestOrigin, err := allowlist.NormalizeOrigin(requestOrigin)
+		if err != nil || normalizedRequestOrigin != origin {
+			http.Error(w, "request Origin does not match registered origin", http.StatusForbidden)
+			return
+		}
+	}
+	setCORS(w, origin)
+	if err := s.store.Register(req.State, origin); err != nil {
+		if errors.Is(err, store.ErrDuplicateState) {
+			http.Error(w, "state already registered", http.StatusConflict)
+			return
+		}
+		if errors.Is(err, store.ErrStoreFull) {
+			http.Error(w, "state store is full", http.StatusServiceUnavailable)
+			return
+		}
+		http.Error(w, "state registration failed", http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -88,11 +142,11 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleRegisterOptions(w http.ResponseWriter, r *http.Request) {
 	origin := r.Header.Get("Origin")
-	if origin != "" && s.allowlist.Allows(origin) {
-		setCORS(w, origin)
+	if normalizedOrigin, err := allowlist.NormalizeOrigin(origin); err == nil && s.allowlist.Allows(normalizedOrigin) {
+		setCORS(w, normalizedOrigin)
 	}
 	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, "+registerHeader)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -111,7 +165,12 @@ func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 		writeCallbackError(w, "registered origin is no longer allowed")
 		return
 	}
-	target, err := url.Parse(entry.Origin)
+	origin, err := allowlist.NormalizeOrigin(entry.Origin)
+	if err != nil {
+		writeCallbackError(w, "registered origin is invalid")
+		return
+	}
+	target, err := url.Parse(origin)
 	if err != nil || target.Scheme == "" || target.Host == "" {
 		writeCallbackError(w, "registered origin is invalid")
 		return

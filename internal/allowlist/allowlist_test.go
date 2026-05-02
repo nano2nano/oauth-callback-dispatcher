@@ -47,3 +47,23 @@ func TestHTTPPatternWarnsButSucceeds(t *testing.T) {
 		t.Fatalf("expected HTTP warning, got %q", buf.String())
 	}
 }
+
+func TestAllowsRejectsNonOriginURLs(t *testing.T) {
+	a, err := New(`^https://[a-z0-9-]+\.myapp\.localhost$`, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, origin := range []string{
+		"https://app.myapp.localhost/",
+		"https://app.myapp.localhost/path",
+		"https://app.myapp.localhost?x=1",
+		"https://app.myapp.localhost#frag",
+		"https://app.myapp.localhost@evil.com",
+	} {
+		t.Run(origin, func(t *testing.T) {
+			if a.Allows(origin) {
+				t.Fatal("expected origin to be rejected")
+			}
+		})
+	}
+}

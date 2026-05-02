@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -40,18 +41,24 @@ func run() error {
 	defer stop()
 
 	states := store.New(cfg.stateTTL, time.Now)
+	states.SetMaxEntries(cfg.maxStateEntries)
 	app := server.New(allow, states, logger)
 	app.StartCleanup(ctx, time.Minute)
 
+	addr := net.JoinHostPort(cfg.listenHost, strconv.Itoa(cfg.port))
 	httpServer := &http.Server{
-		Addr:              ":" + strconv.Itoa(cfg.port),
+		Addr:              addr,
 		Handler:           app.Handler(),
+		ReadTimeout:       10 * time.Second,
 		ReadHeaderTimeout: 5 * time.Second,
+		WriteTimeout:      10 * time.Second,
+		IdleTimeout:       30 * time.Second,
+		MaxHeaderBytes:    8 << 10,
 	}
 
 	errCh := make(chan error, 1)
 	go func() {
-		logger.Info("server listening", "port", cfg.port)
+		logger.Info("server listening", "addr", addr)
 		errCh <- httpServer.ListenAndServe()
 	}()
 
@@ -72,9 +79,11 @@ func run() error {
 }
 
 type config struct {
+	listenHost           string
 	port                 int
 	allowedOriginPattern string
 	stateTTL             time.Duration
+	maxStateEntries      int
 	logLevel             slog.Level
 }
 
@@ -90,14 +99,23 @@ func loadConfig() (config, error) {
 	if ttlSeconds <= 0 {
 		return config{}, errors.New("STATE_TTL_SECONDS must be positive")
 	}
+	maxStateEntries, err := intEnv("MAX_STATE_ENTRIES", 10000)
+	if err != nil {
+		return config{}, err
+	}
+	if maxStateEntries <= 0 {
+		return config{}, errors.New("MAX_STATE_ENTRIES must be positive")
+	}
 	level, err := parseLogLevel(getenv("LOG_LEVEL", "info"))
 	if err != nil {
 		return config{}, err
 	}
 	return config{
+		listenHost:           getenv("LISTEN_HOST", "127.0.0.1"),
 		port:                 port,
 		allowedOriginPattern: os.Getenv("ALLOWED_ORIGIN_PATTERN"),
 		stateTTL:             time.Duration(ttlSeconds) * time.Second,
+		maxStateEntries:      maxStateEntries,
 		logLevel:             level,
 	}, nil
 }

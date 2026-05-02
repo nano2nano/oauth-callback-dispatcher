@@ -59,12 +59,23 @@ exp-foo.myapp.localhost           (固定サブドメイン)
 }
 ```
 
+必須ヘッダ:
+
+```http
+Content-Type: application/json
+X-OAuth-Callback-Dispatcher: register
+```
+
 **レスポンス:**
 
 - 成功: `204 No Content`
 - origin がホワイトリスト外: `400 Bad Request`
 - state または origin の欠如: `400 Bad Request`
+- 登録リクエスト用ヘッダ欠如: `403 Forbidden`
+- Content-Type 不正: `415 Unsupported Media Type`
+- リクエスト body 過大: `413 Payload Too Large`
 - state の重複(既に同じ state が登録済み): `409 Conflict`
+- in-flight state 上限超過: `503 Service Unavailable`
 
 **CORS:**
 
@@ -72,6 +83,7 @@ exp-foo.myapp.localhost           (固定サブドメイン)
 - `Access-Control-Allow-Origin` を動的に設定
 - preflight (`OPTIONS`) に対応
 - `Content-Type: application/json` を許可
+- `X-OAuth-Callback-Dispatcher` を許可
 - ※ CORS と `Origin` ヘッダは **信頼の根拠ではない**(§7.3 参照)。ブラウザ利便性のために設定するのみ
 
 ### 6.2 `GET /auth/callback`
@@ -119,6 +131,10 @@ OAuth Provider から認可コードを受け取り、本来の環境にリダ�
 **必須:**
 
 - `/register` の origin パラメータは `ALLOWED_ORIGIN_PATTERN` で厳密検証
+- `/register` は `Content-Type: application/json` と `X-OAuth-Callback-Dispatcher: register` を必須とし、simple form post による drive-by 登録を拒否する
+- `/register` の body、state 長、origin 長、in-flight state 数に上限を設け、ローカルサービスのメモリ DoS を抑制する
+- ブラウザが `Origin` ヘッダを送る場合は、body の正規化済み `origin` と完全一致させる
+- origin は URL として parse し、`scheme://host[:port]` 形式だけを許可する。userinfo、path、query、fragment を含む値は拒否する
 - callback リダイレクト時、マップから取り出した origin に対しても再度 `ALLOWED_ORIGIN_PATTERN` を検証(防御的プログラミング、Authentik CVE-2024-52289 と同型のミスを二段で防ぐ)
 - state は OAuth 仕様通り、クライアントが推測不可能なランダム値として生成する前提
 - ディスパッチャは state を改竄しない、検証もしない(クライアント側の既存 state 検証ロジックを尊重)
@@ -166,8 +182,10 @@ regex 一本ではミスが起きやすいため、将来的には URL パース
 | 変数名 | 必須 | 説明 |
 |---|---|---|
 | `PORT` | 任意 | リッスンポート(デフォルト 8888) |
+| `LISTEN_HOST` | 任意 | リッスンホスト(デフォルト `127.0.0.1`、外部公開時のみ明示的に `0.0.0.0` 等を指定) |
 | `ALLOWED_ORIGIN_PATTERN` | 必須 | リダイレクト許可 origin の正規表現。起動時 sanity check に通る必要あり(§7.3) |
 | `STATE_TTL_SECONDS` | 任意 | state エントリの TTL(デフォルト 600) |
+| `MAX_STATE_ENTRIES` | 任意 | in-flight state エントリ上限(デフォルト 10000) |
 | `LOG_LEVEL` | 任意 | `debug` / `info` / `warn` / `error`(デフォルト `info`) |
 
 ## 9. クライアント側の利用方法
@@ -185,6 +203,7 @@ OAuth 認可 URL の `redirect_uri` パラメータと、トークン交換時�
 ```
 POST {DISPATCHER_URL}/register
 Content-Type: application/json
+X-OAuth-Callback-Dispatcher: register
 
 {
   "state":  "<認可 URL に渡す state と同じ値>",

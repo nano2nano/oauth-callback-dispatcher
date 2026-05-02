@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"regexp"
 	"strings"
 )
@@ -12,6 +13,7 @@ var (
 	ErrEmptyPattern      = errors.New("ALLOWED_ORIGIN_PATTERN is required")
 	ErrUnanchoredPattern = errors.New("ALLOWED_ORIGIN_PATTERN must start with ^ and end with $")
 	ErrUnescapedDot      = errors.New("ALLOWED_ORIGIN_PATTERN contains an unescaped literal dot")
+	ErrInvalidOrigin     = errors.New("origin must be scheme://host[:port] without userinfo, path, query, or fragment")
 )
 
 type Allowlist struct {
@@ -47,7 +49,8 @@ func New(pattern string, logger *slog.Logger) (*Allowlist, error) {
 }
 
 func (a *Allowlist) Allows(origin string) bool {
-	return a != nil && a.re.MatchString(origin)
+	normalized, err := NormalizeOrigin(origin)
+	return err == nil && a != nil && a.re.MatchString(normalized)
 }
 
 func (a *Allowlist) Pattern() string {
@@ -60,10 +63,25 @@ func (a *Allowlist) Pattern() string {
 var bypassCandidates = []string{
 	"https://evil.com",
 	"http://evil.com",
+	"https://app.myapp.localhost@evil.com",
 	"https://attacker.com.myapp.localhost.evil.com",
 	"https://myapp.localhost.evil.com",
 	"https://appxmyappxlocalhost",
 	"https://app.myapp.localhost.evil.com",
+}
+
+func NormalizeOrigin(origin string) (string, error) {
+	u, err := url.Parse(origin)
+	if err != nil {
+		return "", ErrInvalidOrigin
+	}
+	if u.Scheme == "" || u.Host == "" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
+		return "", ErrInvalidOrigin
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return "", ErrInvalidOrigin
+	}
+	return u.String(), nil
 }
 
 func hasUnescapedLiteralDot(pattern string) bool {
