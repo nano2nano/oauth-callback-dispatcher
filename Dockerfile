@@ -1,3 +1,4 @@
 FROM scratch
-COPY oauth-callback-dispatcher /oauth-callback-dispatcher
+ARG TARGETARCH
+COPY linux/${TARGETARCH}/oauth-callback-dispatcher /oauth-callback-dispatcher
 ENTRYPOINT ["/oauth-callback-dispatcher"]
