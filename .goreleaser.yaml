@@ -1,0 +1,71 @@
+version: 2
+
+project_name: oauth-callback-dispatcher
+
+before:
+  hooks:
+    - go test ./...
+
+builds:
+  - id: oauth-callback-dispatcher
+    main: ./cmd/oauth-callback-dispatcher
+    binary: oauth-callback-dispatcher
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+
+archives:
+  - id: default
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+
+checksum:
+  name_template: checksums.txt
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  use: github
+  sort: asc
+
+release:
+  github:
+    owner: nano2nano
+    name: oauth-callback-dispatcher
+
+homebrew_casks:
+  - name: oauth-callback-dispatcher
+    ids:
+      - default
+    binaries:
+      - oauth-callback-dispatcher
+    repository:
+      owner: nano2nano
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    homepage: "https://github.com/nano2nano/oauth-callback-dispatcher"
+    description: "Local development OAuth callback dispatcher"
+    license: "MIT"
+
+dockers_v2:
+  - images:
+      - "ghcr.io/nano2nano/oauth-callback-dispatcher"
+    tags:
+      - "{{ .Tag }}"
+    dockerfile: Dockerfile
+    platforms:
+      - linux/amd64
+      - linux/arm64
