@@ -34,6 +34,27 @@ archives:
 checksum:
   name_template: checksums.txt
 
+signs:
+  - id: cosign-checksum
+    cmd: cosign
+    artifacts: checksum
+    output: true
+    signature: "${artifact}.sigstore.json"
+    args:
+      - sign-blob
+      - "--bundle=${signature}"
+      - "${artifact}"
+      - "--yes"
+
+docker_signs:
+  - cmd: cosign
+    artifacts: manifests
+    output: true
+    args:
+      - sign
+      - "--yes"
+      - "${artifact}@${digest}"
+
 snapshot:
   version_template: "{{ incpatch .Version }}-next"
 
