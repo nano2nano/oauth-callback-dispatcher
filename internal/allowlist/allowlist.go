@@ -60,6 +60,12 @@ func (a *Allowlist) Pattern() string {
 	return a.pattern
 }
 
+// bypassCandidates are origins that any sane allowlist must reject.
+// Each entry maps to a documented redirect_uri allowlist bypass class:
+// foreign domain, plain HTTP variant, userinfo authority confusion
+// (Pocket ID CVE-2026-28512), suffix concatenation and sub-suffix
+// takeover (Authentik CVE-2024-52289 family), and the unescaped-dot
+// regex mistake also exercised by hasUnescapedLiteralDot.
 var bypassCandidates = []string{
 	"https://evil.com",
 	"http://evil.com",
@@ -75,7 +81,7 @@ func NormalizeOrigin(origin string) (string, error) {
 	if err != nil {
 		return "", ErrInvalidOrigin
 	}
-	if u.Scheme == "" || u.Host == "" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
+	if u.Scheme == "" || u.Host == "" || u.User != nil || u.Opaque != "" || u.Path != "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
 		return "", ErrInvalidOrigin
 	}
 	if u.Scheme != "http" && u.Scheme != "https" {

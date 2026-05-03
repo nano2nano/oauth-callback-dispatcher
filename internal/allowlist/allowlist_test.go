@@ -57,8 +57,10 @@ func TestAllowsRejectsNonOriginURLs(t *testing.T) {
 		"https://app.myapp.localhost/",
 		"https://app.myapp.localhost/path",
 		"https://app.myapp.localhost?x=1",
+		"https://app.myapp.localhost?",
 		"https://app.myapp.localhost#frag",
 		"https://app.myapp.localhost@evil.com",
+		"https:app.myapp.localhost",
 	} {
 		t.Run(origin, func(t *testing.T) {
 			if a.Allows(origin) {
