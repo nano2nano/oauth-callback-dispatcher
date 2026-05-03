@@ -76,6 +76,7 @@ type registerRequest struct {
 }
 
 func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
 	if r.Header.Get(registerHeader) != registerHeaderValue {
 		http.Error(w, "registration header is required", http.StatusForbidden)
 		return
@@ -158,6 +159,7 @@ func (s *Server) handleRegisterOptions(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
 	state := r.URL.Query().Get("state")
 	if state == "" {
 		writeCallbackError(w, "missing state")

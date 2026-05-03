@@ -55,6 +55,9 @@ func TestRegisterCallbackAndReplay(t *testing.T) {
 	if got := cbRes.Header().Get("Location"); got != want {
 		t.Fatalf("Location = %q, want %q", got, want)
 	}
+	if got := cbRes.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("callback Cache-Control = %q, want no-store", got)
+	}
 
 	replayRes := httptest.NewRecorder()
 	handler.ServeHTTP(replayRes, cb)
