@@ -11,7 +11,7 @@
       let
         pkgs = import nixpkgs { inherit system; };
         pname = "oauth-callback-dispatcher";
-        version = "0.1.3";
+        version = "0.1.4";
       in
       {
         packages.default = pkgs.buildGoModule {
