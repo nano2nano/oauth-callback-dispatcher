@@ -142,8 +142,15 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleRegisterOptions(w http.ResponseWriter, r *http.Request) {
 	origin := r.Header.Get("Origin")
-	if normalizedOrigin, err := allowlist.NormalizeOrigin(origin); err == nil && s.allowlist.Allows(normalizedOrigin) {
+	if origin != "" {
+		normalizedOrigin, err := allowlist.NormalizeOrigin(origin)
+		if err != nil || !s.allowlist.Allows(normalizedOrigin) {
+			w.Header().Set("Vary", "Origin")
+			http.Error(w, "origin is not allowed", http.StatusForbidden)
+			return
+		}
 		setCORS(w, normalizedOrigin)
+		w.Header().Set("Access-Control-Max-Age", "600")
 	}
 	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, "+registerHeader)

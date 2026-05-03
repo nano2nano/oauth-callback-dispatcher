@@ -225,6 +225,33 @@ func TestHealthzAndPreflight(t *testing.T) {
 	if got := options.Header().Get("Access-Control-Allow-Origin"); got != "https://feat-a.myapp.localhost" {
 		t.Fatalf("preflight origin = %q", got)
 	}
+	if got := options.Header().Get("Access-Control-Max-Age"); got == "" {
+		t.Fatalf("preflight Access-Control-Max-Age must be set")
+	}
+
+	denied := httptest.NewRequest(http.MethodOptions, "/register", nil)
+	denied.Header.Set("Origin", "https://evil.com")
+	deniedRes := httptest.NewRecorder()
+	handler.ServeHTTP(deniedRes, denied)
+	if deniedRes.Code != http.StatusForbidden {
+		t.Fatalf("denied preflight = %d", deniedRes.Code)
+	}
+	if got := deniedRes.Header().Get("Access-Control-Allow-Origin"); got != "" {
+		t.Fatalf("denied preflight must omit ACAO, got %q", got)
+	}
+	if got := deniedRes.Header().Get("Vary"); got != "Origin" {
+		t.Fatalf("denied preflight Vary = %q, want Origin", got)
+	}
+
+	noOrigin := httptest.NewRequest(http.MethodOptions, "/register", nil)
+	noOriginRes := httptest.NewRecorder()
+	handler.ServeHTTP(noOriginRes, noOrigin)
+	if noOriginRes.Code != http.StatusNoContent {
+		t.Fatalf("no-origin options = %d", noOriginRes.Code)
+	}
+	if got := noOriginRes.Header().Get("Access-Control-Allow-Origin"); got != "" {
+		t.Fatalf("no-origin must omit ACAO, got %q", got)
+	}
 }
 
 func TestStartCleanupStopsWithContext(t *testing.T) {
