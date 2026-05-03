@@ -1,3 +1,10 @@
+// Package logging wraps slog.Handler with key-based redaction.
+//
+// Redaction is intentionally scoped to slog.Attr keys only. The log
+// message body (the format string passed to logger.Info etc.) and any
+// source location are NOT inspected. Callers must therefore avoid
+// embedding OAuth secrets (state, code, tokens) into message text or
+// non-secret-looking attribute keys.
 package logging
 
 import (

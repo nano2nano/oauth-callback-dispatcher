@@ -21,3 +21,14 @@ func TestRedactHandlerDropsSecretKeys(t *testing.T) {
 		t.Fatalf("expected non-secret key to remain: %s", out)
 	}
 }
+
+// TestRedactHandlerDoesNotInspectMessageBody documents that message bodies
+// pass through verbatim. Callers must never embed OAuth secrets in messages.
+func TestRedactHandlerDoesNotInspectMessageBody(t *testing.T) {
+	var buf bytes.Buffer
+	logger := slog.New(NewRedactHandler(slog.NewJSONHandler(&buf, nil)))
+	logger.Info("processing code=do-not-do-this")
+	if !strings.Contains(buf.String(), "do-not-do-this") {
+		t.Fatalf("redaction should not touch message bodies; got %s", buf.String())
+	}
+}
